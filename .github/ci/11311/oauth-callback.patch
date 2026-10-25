@@ -1,0 +1,99 @@
+diff --git a/packages/mcp/src/oauth/callback.ts b/packages/mcp/src/oauth/callback.ts
+index d087c4340..a9c2b66ad 100644
+--- a/packages/mcp/src/oauth/callback.ts
++++ b/packages/mcp/src/oauth/callback.ts
+@@ -1,4 +1,5 @@
+ import { createServer, type Server, type ServerResponse } from "node:http";
++import type { Socket } from "node:net";
+ 
+ export interface OAuthCallback {
+ 	code: string;
+@@ -37,6 +38,7 @@ export class OAuthCallbackServer {
+ 	private paths: string[];
+ 	private timeoutMs: number;
+ 	private renderPage: ((page: OAuthCallbackPage) => string) | undefined;
++	private sockets = new Set<Socket>();
+ 	private pending = new Map<
+ 		string,
+ 		{
+@@ -59,6 +61,10 @@ export class OAuthCallbackServer {
+ 		this.paths = paths;
+ 		this.timeoutMs = timeoutMs;
+ 		this.renderPage = renderPage;
++		server.on("connection", (socket) => {
++			this.sockets.add(socket);
++			socket.once("close", () => this.sockets.delete(socket));
++		});
+ 	}
+ 
+ 	static async listen(options: OAuthCallbackServerOptions = {}): Promise<OAuthCallbackServer> {
+@@ -109,6 +115,8 @@ export class OAuthCallbackServer {
+ 		this.pending.clear();
+ 		await new Promise<void>((resolve, reject) => {
+ 			this.server.close((error) => (error ? reject(error) : resolve()));
++			// Flush result pages while also closing unused browser preconnections.
++			for (const socket of this.sockets) socket.destroySoon();
+ 		});
+ 	}
+ 
+diff --git a/packages/mcp/test/oauth.test.ts b/packages/mcp/test/oauth.test.ts
+index c6d175b8c..b59fb39a7 100644
+--- a/packages/mcp/test/oauth.test.ts
++++ b/packages/mcp/test/oauth.test.ts
+@@ -1,4 +1,6 @@
+ import { createHash } from "node:crypto";
++import { once } from "node:events";
++import { createConnection } from "node:net";
+ import { afterEach, describe, expect, it } from "vitest";
+ import { McpClient, StreamableHttpTransport } from "../src/index.ts";
+ import {
+@@ -609,6 +611,49 @@ describe("MCP OAuth", () => {
+ });
+ 
+ describe("OAuthCallbackServer pages", () => {
++	// #11311
++	it.each([false, true])("closes an unused connection (partial request: %s)", async (partialRequest) => {
++		const callback = await OAuthCallbackServer.listen();
++		const url = new URL(callback.redirectUrl);
++		const socket = createConnection({ host: url.hostname, port: Number(url.port) });
++		let closing: Promise<void> | undefined;
++		try {
++			await once(socket, "connect");
++			if (partialRequest) socket.write("GET /callback HTTP/1.1\r\nHost: localhost\r\n");
++			const pending = callback.waitForCallback("s1").catch((error: unknown) => error);
++			let closed = false;
++			closing = callback.close().then(() => {
++				closed = true;
++			});
++			expect(await pending).toMatchObject({ message: "OAuth callback server closed" });
++			await expect.poll(() => closed, { timeout: 1000 }).toBe(true);
++		} finally {
++			socket.destroy();
++			await (closing ?? callback.close());
++		}
++	});
++
++	// #11311
++	it.each([false, true])("flushes the result page while closing (denied: %s)", async (denied) => {
++		const html = `<p>${"x".repeat(2 * 1024 * 1024)}</p>`;
++		const callback = await OAuthCallbackServer.listen({ renderPage: () => html });
++		const pending = callback.waitForCallback("s1");
++		const closing = pending.then(
++			() => callback.close(),
++			() => callback.close(),
++		);
++		try {
++			const query = denied ? "error=access_denied" : "code=abc";
++			const response = await fetch(`${callback.redirectUrl}?${query}&state=s1`);
++			expect(response.status).toBe(200);
++			expect(await response.text()).toBe(html);
++			if (denied) await expect(pending).rejects.toThrow("access_denied");
++			else expect(await pending).toEqual({ code: "abc", state: "s1" });
++		} finally {
++			await closing;
++		}
++	});
++
+ 	it("renders plain text by default", async () => {
+ 		const callback = await OAuthCallbackServer.listen();
+ 		try {
