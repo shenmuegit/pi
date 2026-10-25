@@ -7,7 +7,8 @@ case "$phase" in
   *) printf 'Unknown validation phase\n' >&2; exit 64 ;;
 esac
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-state="$PWD/.validation/11311"
+workspace=$(cd -- "${GITHUB_WORKSPACE:-$PWD}" && pwd)
+state="$workspace/.validation/11311"
 export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}"
 export HOME="$state/home"
 export TMPDIR="$state/tmp" TMP="$state/tmp" TEMP="$state/tmp"
