@@ -2186,13 +2186,15 @@ export class AgentSession {
 		// Reserve the context through async input hooks and auth checks so tree navigation cannot
 		// start meanwhile (#9154). _startRun marks the run active synchronously, so there is no gap.
 		this._promptPreflightCount++;
-		let trigger: BeforeAgentStartTrigger | undefined;
+		let run: Promise<void> | undefined;
 		try {
-			trigger = await this._preparePrompt(text, options);
+			const trigger = await this._preparePrompt(text, options);
+			if (trigger) run = this._startRun(trigger, () => preflightResult?.("started"));
 		} finally {
 			this._promptPreflightCount--;
+			this._resolveIdleWaitIfIdle();
 		}
-		if (trigger) await this._startRun(trigger, () => preflightResult?.("started"));
+		await run;
 	}
 
 	/**
@@ -2607,14 +2609,14 @@ export class AgentSession {
 		this.abortBranchSummary();
 		if (this._isBeforeSettle) this._abortDuringBeforeSettle = true;
 		this.agent.abort();
-		await this.waitForIdle();
+		// An input handler can await compact(), so abort must not wait for its own preflight.
+		if (!this.isIdle) await this._getIdleWaitPromise();
 	}
 
 	async waitForIdle(): Promise<void> {
-		if (this.isIdle) {
-			return;
+		while (this._promptPreflightCount > 0 || !this.isIdle) {
+			await this._getIdleWaitPromise();
 		}
-		await this._getIdleWaitPromise();
 	}
 
 	// =========================================================================
