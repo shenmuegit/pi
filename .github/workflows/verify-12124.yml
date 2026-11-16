@@ -1,0 +1,58 @@
+name: Verify issue 12124
+
+on:
+  push:
+    branches: [codex/verify-12124-20261116]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'shenmuegit/pi'
+    name: ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: baseline
+            ref: 22fc026b872b4a7df22ffa94e8fa00b873128054
+          - variant: patched
+            ref: ce7dbba948467a3b8c011d02f1f92c322d5bfc82
+    steps:
+      - name: Checkout validation scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: control
+          sparse-checkout: .github/ci/12124
+          persist-credentials: false
+
+      - name: Checkout exact source commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.ref }}
+          path: source
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Build, check and run original test.sh
+        env:
+          VERIFY_VARIANT: ${{ matrix.variant }}
+          VERIFY_REF: ${{ matrix.ref }}
+        run: bash control/.github/ci/12124/run.sh
+
+      - name: Upload full validation logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: issue-12124-${{ matrix.variant }}
+          path: .validation/12124/logs
+          retention-days: 30
+          include-hidden-files: true
+          if-no-files-found: error

@@ -1,0 +1,4 @@
+eb95b3daec3bd7d14a1c3fba88a64611596ba4d9c79db62b8bfda5f7847df5ec  packages/ai/src/utils/retry.ts
+e263429edea1972b5a09e9f11cc55f71e75a8ae99c77748e291df32beaa1797e  packages/ai/test/retry.test.ts
+f959812c62a9dc54489b7496c4a25ed22bf1e24956115729d9cd5b25ef3240cc  packages/ai/test/openai-codex-stream.test.ts
+f5a1b6d0cdf6a8ef02a634f70621b320b4120fcc53bda65f1196fb21c8313b35  test.sh
