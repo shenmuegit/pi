@@ -1155,7 +1155,16 @@ export class AgentSession {
 		const deferred = this._deferredSettledActions.splice(0);
 		if (deferred.length > 0) {
 			try {
-				for (const action of deferred) await action();
+				let firstFailure: { error: unknown } | undefined;
+				// A failed continuation must not discard other callers' deferred requests.
+				for (const action of deferred) {
+					try {
+						await action();
+					} catch (error) {
+						firstFailure ??= { error };
+					}
+				}
+				if (firstFailure) throw firstFailure.error;
 			} finally {
 				this._resolveIdleWaitIfIdle();
 			}
@@ -2176,6 +2185,19 @@ export class AgentSession {
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
 		if (this._isEmittingAgentSettled) {
+			if (options?.preflightResult) {
+				// RPC needs the deferred result; callers inside settled handlers must still be able to return.
+				return new Promise<void>((resolve, reject) => {
+					this._deferredSettledActions.push(async () => {
+						try {
+							await this.prompt(text, options);
+							resolve();
+						} catch (error) {
+							reject(error);
+						}
+					});
+				});
+			}
 			this._deferredSettledActions.push(async () => await this.prompt(text, options));
 			return;
 		}
