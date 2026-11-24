@@ -49,11 +49,11 @@ jobs:
       - name: Check
         run: npm run check
 
-      # The checkout has no tags; the released changelog sections are compared with the newest release tag.
+      # Forks may have no release tags; compare released changelog sections with the newest upstream release.
       - name: Fetch the newest release tag
         run: |
-          tag=$(git ls-remote --tags --sort=-v:refname origin 'v*.*.*' | grep -v '\^{}' | head -1 | sed 's#.*refs/tags/##')
-          git fetch --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+          tag=$(git ls-remote --tags --sort=-v:refname https://github.com/earendil-works/pi.git 'v*.*.*' | grep -v '\^{}' | head -1 | sed 's#.*refs/tags/##')
+          git fetch --depth=1 https://github.com/earendil-works/pi.git "refs/tags/$tag:refs/tags/$tag"
 
       - name: Check released changelog sections
         run: npm run check:released-changelogs
@@ -219,3 +219,5 @@ jobs:
           path: ${{ runner.temp }}/rpc-12196-regression.json
           retention-days: 3
           if-no-files-found: error
+
+
