@@ -16,6 +16,9 @@ jobs:
     name: full test (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: source
     strategy:
       fail-fast: false
       matrix:
@@ -30,12 +33,14 @@ jobs:
         with:
           ref: ${{ matrix.ref }}
           persist-credentials: false
+          path: source
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: source/package-lock.json
 
       - name: Install system dependencies
         run: |
@@ -55,8 +60,17 @@ jobs:
       - name: Check
         run: npm run check
 
+      - name: Verify temporary directory layout
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/t"
+          sed 's|npm test$|node ../../node_modules/vitest/dist/cli.js --run test/output-file-failures.test.ts test/resource-loader.test.ts|' test.sh > .ci-layout-smoke.sh
+          grep -Fq 'vitest/dist/cli.js' .ci-layout-smoke.sh
+          (cd packages/coding-agent && TMPDIR="$GITHUB_WORKSPACE/t" bash ../../.ci-layout-smoke.sh)
+          sed 's|npm test$|node ../../node_modules/vitest/dist/cli.js --run test/conformance.test.ts|' test.sh > .ci-layout-smoke.sh
+          (cd packages/env && TMPDIR="$GITHUB_WORKSPACE/t" bash ../../.ci-layout-smoke.sh)
+          rm -- .ci-layout-smoke.sh
+
       - name: Full test script
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/.test-runtime/tmp"
-          TMPDIR="$GITHUB_WORKSPACE/.test-runtime/tmp" ./test.sh
+          TMPDIR="$GITHUB_WORKSPACE/t" ./test.sh
 
